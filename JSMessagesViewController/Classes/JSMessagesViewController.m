@@ -65,7 +65,7 @@
         UIView *topHeaderView = [self.delegate customTopHeaderView];
 
         [self.view addSubview:topHeaderView];
-        y = topHeaderView.frame.size.height + 60;
+        y = topHeaderView.frame.size.height + 40;
     }
 
 

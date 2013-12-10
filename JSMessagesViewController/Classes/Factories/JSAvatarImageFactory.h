@@ -46,4 +46,5 @@ extern CGFloat const kJSAvatarImageSize;
 + (UIImage *)classicAvatarImageNamed:(NSString *)filename
                      croppedToCircle:(BOOL)croppedToCircle;
 
++ (UIImage *)avatarImage:(UIImage *)image croppedToCircle:(BOOL)croppedToCircle;
 @end

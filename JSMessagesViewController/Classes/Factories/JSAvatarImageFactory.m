@@ -41,4 +41,13 @@ CGFloat const kJSAvatarImageSize = 50.0f;
                       shadowOffSet:CGSizeMake(0.0f, 1.0f)];
 }
 
++ (UIImage *)avatarImage:(UIImage *)image croppedToCircle:(BOOL)croppedToCircle {
+    return [image js_imageAsCircle:croppedToCircle
+                       withDiamter:kJSAvatarImageSize
+                       borderColor:nil
+                       borderWidth:0.0f
+                      shadowOffSet:CGSizeZero];;
+}
+
+
 @end
