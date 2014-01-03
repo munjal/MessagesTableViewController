@@ -15,6 +15,7 @@
 #import "JSMessagesViewController.h"
 #import "JSMessageTextView.h"
 #import "NSString+JSMessagesView.h"
+#import "UIGestureRecognizer+BlocksKit.h"
 
 @interface JSMessagesViewController () <JSDismissiveTextViewDelegate>
 
@@ -50,7 +51,7 @@
 {
     if([self.view isKindOfClass:[UIScrollView class]]) {
         // FIXME: hack-ish fix for ipad modal form presentations
-        ((UIScrollView *)self.view).scrollEnabled = NO;
+//        ((UIScrollView *)self.view).scrollEnabled = NO;
     }
     
 	_isUserScrolling = NO;
@@ -61,26 +62,28 @@
     CGFloat inputViewHeight = (inputViewStyle == JSMessageInputViewStyleFlat) ? 45.0f : 40.0f;
 
     CGFloat y = 0.0f;
+    UIView *thv;
     if ([self.delegate respondsToSelector:@selector(customTopHeaderView)]) {
         UIView *topHeaderView = [self.delegate customTopHeaderView];
+        thv = topHeaderView;
 
         [self.view addSubview:topHeaderView];
-        y = topHeaderView.frame.size.height + 40;
+        y = topHeaderView.frame.size.height;
+
     }
 
-
-    CGRect tableFrame = CGRectMake(0.0f, y, size.width, size.height - inputViewHeight - y);
+    CGRect tableFrame = CGRectMake(0.0f, y, size.width, size.height - inputViewHeight - y - 64 - 44);
 	UITableView *tableView = [[UITableView alloc] initWithFrame:tableFrame style:UITableViewStylePlain];
 	tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 	tableView.dataSource = self;
 	tableView.delegate = self;
-	[self.view addSubview:tableView];
+	[self.view insertSubview:tableView belowSubview:thv];
 	_tableView = tableView;
-    
+
     [self setBackgroundColor:[UIColor js_backgroundColorClassic]];
     
     CGRect inputFrame = CGRectMake(0.0f,
-                                   size.height - inputViewHeight,
+                                   tableFrame.origin.y + tableFrame.size.height,
                                    size.width,
                                    inputViewHeight);
     
@@ -102,7 +105,13 @@
     [inputView.sendButton addTarget:self
                              action:@selector(sendPressed:)
                    forControlEvents:UIControlEventTouchUpInside];
-    
+
+    UITapGestureRecognizer *tapGestureRecognizer = [[UITapGestureRecognizer alloc] initWithHandler:^(UIGestureRecognizer *sender, UIGestureRecognizerState state, CGPoint location) {
+        [inputView resignFirstResponder];
+    }];
+    tapGestureRecognizer.numberOfTapsRequired = 2;
+    [self.tableView addGestureRecognizer:tapGestureRecognizer];
+
     [self.view addSubview:inputView];
     _messageInputView = inputView;
     
@@ -504,19 +513,18 @@
 
 #pragma mark - Keyboard notifications
 
-- (void)handleWillShowKeyboardNotification:(NSNotification *)notification
-{
-    [self keyboardWillShowHide:notification];
+- (void)handleWillShowKeyboardNotification:(NSNotification *)notification {
+    [self keyboardWillShowHide:YES notification:notification];
 }
 
-- (void)handleWillHideKeyboardNotification:(NSNotification *)notification
-{
-    [self keyboardWillShowHide:notification];
+- (void)handleWillHideKeyboardNotification:(NSNotification *)notification {
+    [self keyboardWillShowHide:NO notification:notification];
 }
 
-- (void)keyboardWillShowHide:(NSNotification *)notification
-{
+- (void)keyboardWillShowHide:(BOOL)isShown notification:(NSNotification *)notification {
+    self.isKeyboardVisible = isShown; 
     CGRect keyboardRect = [[notification.userInfo objectForKey:UIKeyboardFrameEndUserInfoKey] CGRectValue];
+    self.keyboardRect = keyboardRect;
 	UIViewAnimationCurve curve = [[notification.userInfo objectForKey:UIKeyboardAnimationCurveUserInfoKey] integerValue];
 	double duration = [[notification.userInfo objectForKey:UIKeyboardAnimationDurationUserInfoKey] doubleValue];
     
@@ -528,24 +536,31 @@
                          
                          CGRect inputViewFrame = self.messageInputView.frame;
                          CGFloat inputViewFrameY = keyboardY - inputViewFrame.size.height;
-                         
+
+                         //This crappy shit not required. Just fucks up with everything.
                          // for ipad modal form presentations
-                         CGFloat messageViewFrameBottom = self.view.frame.size.height - inputViewFrame.size.height;
-                         if(inputViewFrameY > messageViewFrameBottom)
-                             inputViewFrameY = messageViewFrameBottom;
-						 
+                         //CGFloat messageViewFrameBottom = self.view.frame.size.height - inputViewFrame.size.height;
+                         //if(inputViewFrameY > messageViewFrameBottom)
+                         //    inputViewFrameY = messageViewFrameBottom;
+
                          self.messageInputView.frame = CGRectMake(inputViewFrame.origin.x,
 																  inputViewFrameY,
 																  inputViewFrame.size.width,
 																  inputViewFrame.size.height);
 
                          UIEdgeInsets insets = self.originalTableViewContentInset;
-                         insets.bottom = self.view.frame.size.height
-                                            - self.messageInputView.frame.origin.y
-                                            - inputViewFrame.size.height;
-                         
-                         self.tableView.contentInset = insets;
-                         self.tableView.scrollIndicatorInsets = insets;
+
+                         if (isShown)
+                             insets.bottom += keyboardY - self.messageInputView.frame.origin.y + 20;
+//                         insets.bottom = isShown ? keyboardY - self.messageInputView.frame.origin.y : 0;
+
+
+                         UIScrollView *scrollView = (UIScrollView *)self.view;
+                         scrollView.contentInset = insets;
+                         scrollView.scrollIndicatorInsets = insets;
+//                         insets.bottom = isShown ? keyboardY - 30 : 0;
+//                         self.tableView.contentInset = insets;
+//                         self.tableView.scrollIndicatorInsets = insets;
                      }
                      completion:^(BOOL finished) {
                      }];

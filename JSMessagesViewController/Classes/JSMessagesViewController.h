@@ -270,6 +270,10 @@ typedef NS_ENUM(NSUInteger, JSMessagesViewSubtitlePolicy) {
 
 #pragma mark - Messages view controller
 
+@property(nonatomic) BOOL isKeyboardVisible;
+
+@property(nonatomic) CGRect keyboardRect;
+
 /**
  *  Animates and resets the text view in messageInputView. Call this method at the end of the delegate method `didSendText:`. 
  *  @see JSMessagesViewDelegate.
@@ -310,4 +314,5 @@ typedef NS_ENUM(NSUInteger, JSMessagesViewSubtitlePolicy) {
 			  atScrollPosition:(UITableViewScrollPosition)position
 					  animated:(BOOL)animated;
 
+- (void)keyboardDidScrollToPoint:(CGPoint)point;
 @end
