@@ -72,8 +72,8 @@
         _textView.frame = CGRectMake(4.0f, 4.5f, width, height);
         _textView.backgroundColor = [UIColor clearColor];
         _textView.layer.borderColor = [UIColor colorWithWhite:0.8f alpha:1.0f].CGColor;
-        _textView.layer.borderWidth = 0.65f;
-        _textView.layer.cornerRadius = 6.0f;
+        _textView.layer.borderWidth = 0.85f;
+        _textView.layer.cornerRadius = 0.0f;
         
         self.image = [[UIImage imageNamed:@"input-bar-flat"] resizableImageWithCapInsets:UIEdgeInsetsMake(2.0f, 0.0f, 0.0f, 0.0f)
                                                                             resizingMode:UIImageResizingModeStretch];
