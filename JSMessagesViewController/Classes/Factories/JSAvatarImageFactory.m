@@ -20,8 +20,7 @@ CGFloat const kJSAvatarImageSize = 50.0f;
 @implementation JSAvatarImageFactory
 
 + (UIImage *)avatarImageNamed:(NSString *)filename
-              croppedToCircle:(BOOL)croppedToCircle
-{
+              croppedToCircle:(BOOL)croppedToCircle {
     UIImage *image = [UIImage imageNamed:filename];
     return [image js_imageAsCircle:croppedToCircle
                        withDiamter:kJSAvatarImageSize
@@ -48,6 +47,4 @@ CGFloat const kJSAvatarImageSize = 50.0f;
                        borderWidth:0.0f
                       shadowOffSet:CGSizeZero];;
 }
-
-
 @end

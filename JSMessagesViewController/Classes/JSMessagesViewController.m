@@ -72,7 +72,7 @@
 
     }
 
-    CGRect tableFrame = CGRectMake(0.0f, y, size.width, size.height - inputViewHeight - y - 64 - 44);
+    CGRect tableFrame = CGRectMake(0.0f, y, size.width, size.height - inputViewHeight - y);
 	UITableView *tableView = [[UITableView alloc] initWithFrame:tableFrame style:UITableViewStylePlain];
 	tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 	tableView.dataSource = self;
@@ -106,10 +106,10 @@
                              action:@selector(sendPressed:)
                    forControlEvents:UIControlEventTouchUpInside];
 
-    UITapGestureRecognizer *tapGestureRecognizer = [[UITapGestureRecognizer alloc] initWithHandler:^(UIGestureRecognizer *sender, UIGestureRecognizerState state, CGPoint location) {
+    UITapGestureRecognizer *tapGestureRecognizer = [[UITapGestureRecognizer alloc] bk_initWithHandler:^(UIGestureRecognizer *sender, UIGestureRecognizerState state, CGPoint location) {
         [inputView resignFirstResponder];
     }];
-    tapGestureRecognizer.numberOfTapsRequired = 2;
+    tapGestureRecognizer.numberOfTapsRequired = 1;
     [self.tableView addGestureRecognizer:tapGestureRecognizer];
 
     [self.view addSubview:inputView];
@@ -522,45 +522,41 @@
 }
 
 - (void)keyboardWillShowHide:(BOOL)isShown notification:(NSNotification *)notification {
-    self.isKeyboardVisible = isShown; 
+    self.isKeyboardVisible = isShown;
     CGRect keyboardRect = [[notification.userInfo objectForKey:UIKeyboardFrameEndUserInfoKey] CGRectValue];
-    self.keyboardRect = keyboardRect;
-	UIViewAnimationCurve curve = [[notification.userInfo objectForKey:UIKeyboardAnimationCurveUserInfoKey] integerValue];
-	double duration = [[notification.userInfo objectForKey:UIKeyboardAnimationDurationUserInfoKey] doubleValue];
-    
+    UIViewAnimationCurve curve = [[notification.userInfo objectForKey:UIKeyboardAnimationCurveUserInfoKey] integerValue];
+    double duration = [[notification.userInfo objectForKey:UIKeyboardAnimationDurationUserInfoKey] doubleValue];
+
     [UIView animateWithDuration:duration
                           delay:0.0f
                         options:[self animationOptionsForCurve:curve]
                      animations:^{
                          CGFloat keyboardY = [self.view convertRect:keyboardRect fromView:nil].origin.y;
-                         
+                         if (!self.isKeyboardVisible) {
+                             keyboardY = [UIScreen mainScreen].bounds.size.height;
+                         }
+
                          CGRect inputViewFrame = self.messageInputView.frame;
                          CGFloat inputViewFrameY = keyboardY - inputViewFrame.size.height;
 
-                         //This crappy shit not required. Just fucks up with everything.
                          // for ipad modal form presentations
-                         //CGFloat messageViewFrameBottom = self.view.frame.size.height - inputViewFrame.size.height;
-                         //if(inputViewFrameY > messageViewFrameBottom)
-                         //    inputViewFrameY = messageViewFrameBottom;
+                         // CGFloat messageViewFrameBottom = self.view.frame.size.height - inputViewFrame.size.height;
+                         // if(inputViewFrameY > messageViewFrameBottom)
+                         //     inputViewFrameY = messageViewFrameBottom;
 
                          self.messageInputView.frame = CGRectMake(inputViewFrame.origin.x,
-																  inputViewFrameY,
-																  inputViewFrame.size.width,
-																  inputViewFrame.size.height);
+                                 inputViewFrameY,
+                                 inputViewFrame.size.width,
+                                 inputViewFrame.size.height);
 
                          UIEdgeInsets insets = self.originalTableViewContentInset;
 
-                         if (isShown)
-                             insets.bottom += keyboardY - self.messageInputView.frame.origin.y + 20;
-//                         insets.bottom = isShown ? keyboardY - self.messageInputView.frame.origin.y : 0;
+                         insets.bottom = self.view.frame.size.height
+                                 - self.messageInputView.frame.origin.y
+                                 - inputViewFrame.size.height;
 
-
-                         UIScrollView *scrollView = (UIScrollView *)self.view;
-                         scrollView.contentInset = insets;
-                         scrollView.scrollIndicatorInsets = insets;
-//                         insets.bottom = isShown ? keyboardY - 30 : 0;
-//                         self.tableView.contentInset = insets;
-//                         self.tableView.scrollIndicatorInsets = insets;
+                         self.tableView.contentInset = insets;
+                         self.tableView.scrollIndicatorInsets = insets;
                      }
                      completion:^(BOOL finished) {
                      }];

@@ -47,6 +47,10 @@
 
 #pragma mark - Initialization
 
+@property(nonatomic, copy) NSString *targetLink;
+
+@property(nonatomic) BOOL systemMessage;
+
 /**
  *  Initializes a message cell and returns it to the caller.
  *
