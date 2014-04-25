@@ -13,13 +13,10 @@
 //
 
 #import "JSMessagesViewController.h"
-#import "JSMessageTextView.h"
 #import "NSString+JSMessagesView.h"
-#import "UIGestureRecognizer+BlocksKit.h"
 
 @interface JSMessagesViewController () <JSDismissiveTextViewDelegate>
 
-@property (assign, nonatomic, readonly) UIEdgeInsets originalTableViewContentInset;
 @property (assign, nonatomic) CGFloat previousTextViewContentHeight;
 @property (assign, nonatomic) BOOL isUserScrolling;
 
@@ -27,15 +24,18 @@
 
 - (void)sendPressed:(UIButton *)sender;
 
-- (BOOL)shouldHaveTimestampForRowAtIndexPath:(NSIndexPath *)indexPath;
-- (BOOL)shouldHaveAvatarForRowAtIndexPath:(NSIndexPath *)indexPath;
-- (BOOL)shouldHaveSubtitleForRowAtIndexPath:(NSIndexPath *)indexPath;
+- (void)handleTapGestureRecognizer:(UITapGestureRecognizer *)tap;
 
 - (BOOL)shouldAllowScroll;
 
+- (void)layoutAndAnimateMessageInputTextView:(UITextView *)textView;
+- (void)setTableViewInsetsWithBottomValue:(CGFloat)bottom;
+- (UIEdgeInsets)tableViewInsetsWithBottomValue:(CGFloat)bottom;
+
 - (void)handleWillShowKeyboardNotification:(NSNotification *)notification;
 - (void)handleWillHideKeyboardNotification:(NSNotification *)notification;
-- (void)keyboardWillShowHide:(NSNotification *)notification;
+
+- (void)keyboardWillShowHide:(BOOL)isShown notification:(NSNotification *)notification;
 
 - (UIViewAnimationOptions)animationOptionsForCurve:(UIViewAnimationCurve)curve;
 
@@ -49,17 +49,18 @@
 
 - (void)setup
 {
-    if([self.view isKindOfClass:[UIScrollView class]]) {
+    if ([self.view isKindOfClass:[UIScrollView class]]) {
         // FIXME: hack-ish fix for ipad modal form presentations
-//        ((UIScrollView *)self.view).scrollEnabled = NO;
+        // ((UIScrollView *)self.view).scrollEnabled = NO;
     }
-    
-	_isUserScrolling = NO;
-    
+
+    _isUserScrolling = NO;
+
     CGSize size = self.view.frame.size;
-    
+
     JSMessageInputViewStyle inputViewStyle = [self.delegate inputViewStyle];
     CGFloat inputViewHeight = (inputViewStyle == JSMessageInputViewStyleFlat) ? 45.0f : 40.0f;
+
 
     CGFloat y = 0.0f;
     UIView *thv;
@@ -71,54 +72,51 @@
         y = topHeaderView.frame.size.height;
 
     }
-
     CGRect tableFrame = CGRectMake(0.0f, y, size.width, size.height - inputViewHeight - y);
-	UITableView *tableView = [[UITableView alloc] initWithFrame:tableFrame style:UITableViewStylePlain];
-	tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-	tableView.dataSource = self;
-	tableView.delegate = self;
-	[self.view insertSubview:tableView belowSubview:thv];
-	_tableView = tableView;
+
+    JSMessageTableView *tableView = [[JSMessageTableView alloc] initWithFrame:self.view.frame style:UITableViewStylePlain];
+    tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    tableView.dataSource = self;
+    tableView.delegate = self;
+    [self.view insertSubview:tableView belowSubview:thv];
+    _tableView = tableView;
+
+    [self setTableViewInsetsWithBottomValue:inputViewHeight];
 
     [self setBackgroundColor:[UIColor js_backgroundColorClassic]];
-    
+
     CGRect inputFrame = CGRectMake(0.0f,
-                                   tableFrame.origin.y + tableFrame.size.height,
-                                   size.width,
-                                   inputViewHeight);
-    
+            tableFrame.origin.y + tableFrame.size.height,
+            self.view.frame.size.width,
+            inputViewHeight);
+
+    BOOL allowsPan = YES;
+    if ([self.delegate respondsToSelector:@selector(allowsPanToDismissKeyboard)]) {
+        allowsPan = [self.delegate allowsPanToDismissKeyboard];
+    }
+
+    UIPanGestureRecognizer *pan = allowsPan ? _tableView.panGestureRecognizer : nil;
+
     JSMessageInputView *inputView = [[JSMessageInputView alloc] initWithFrame:inputFrame
                                                                         style:inputViewStyle
                                                                      delegate:self
-                                                         panGestureRecognizer:_tableView.panGestureRecognizer];
-    
-    if ([self.delegate respondsToSelector:@selector(customLeftViewForInputView)]) {
-        inputView.customLeftViewForInputView = [self.delegate customLeftViewForInputView];
-    }
-    
-    if([self.delegate respondsToSelector:@selector(sendButtonForInputView)]) {
+                                                         panGestureRecognizer:pan];
+
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTapGestureRecognizer:)];
+    [_tableView addGestureRecognizer:tap];
+
+    if ([self.delegate respondsToSelector:@selector(sendButtonForInputView)]) {
         UIButton *sendButton = [self.delegate sendButtonForInputView];
         [inputView setSendButton:sendButton];
     }
-    
+
     inputView.sendButton.enabled = NO;
     [inputView.sendButton addTarget:self
                              action:@selector(sendPressed:)
                    forControlEvents:UIControlEventTouchUpInside];
 
-    UITapGestureRecognizer *tapGestureRecognizer = [[UITapGestureRecognizer alloc] bk_initWithHandler:^(UIGestureRecognizer *sender, UIGestureRecognizerState state, CGPoint location) {
-        [inputView resignFirstResponder];
-    }];
-    tapGestureRecognizer.numberOfTapsRequired = 1;
-    [self.tableView addGestureRecognizer:tapGestureRecognizer];
-
     [self.view addSubview:inputView];
     _messageInputView = inputView;
-    
-    [_messageInputView.textView addObserver:self
-                                 forKeyPath:@"contentSize"
-                                    options:NSKeyValueObservingOptionNew
-                                    context:nil];
 }
 
 #pragma mark - View lifecycle
@@ -127,59 +125,50 @@
 {
     [super viewDidLoad];
     [self setup];
+    [[JSBubbleView appearance] setFont:[UIFont systemFontOfSize:16.0f]];
 }
 
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-    
-    [self scrollToBottomAnimated:NO];
-    
-	[[NSNotificationCenter defaultCenter] addObserver:self
-											 selector:@selector(handleWillShowKeyboardNotification:)
-												 name:UIKeyboardWillShowNotification
-                                               object:nil];
-    
-	[[NSNotificationCenter defaultCenter] addObserver:self
-											 selector:@selector(handleWillHideKeyboardNotification:)
-												 name:UIKeyboardWillHideNotification
-                                               object:nil];
-}
 
-- (void)viewDidAppear:(BOOL)animated
-{
-    [super viewDidAppear:animated];
-    
-    //  FIXME: this is a hack
-    //  ---------------------
-    //  tableView.contentInset.top = 0.0 on iOS 6
-    //  tableView.contentInset.top = 64.0 on iOS 7
-    //  this is because in iOS 7 all VCs default to fullscreen (with navbar overlayed on view)
-    //  save here in order to reset in [ keyboardWillShowHide: ]
-    //  ---------------------
-    _originalTableViewContentInset = self.tableView.contentInset;
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleWillShowKeyboardNotification:)
+                                                 name:UIKeyboardWillShowNotification
+                                               object:nil];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleWillHideKeyboardNotification:)
+                                                 name:UIKeyboardWillHideNotification
+                                               object:nil];
+
+    [self.messageInputView.textView addObserver:self
+                                     forKeyPath:@"contentSize"
+                                        options:NSKeyValueObservingOptionNew
+                                        context:nil];
 }
 
 - (void)viewWillDisappear:(BOOL)animated
 {
     [super viewWillDisappear:animated];
-    
+
     [self.messageInputView resignFirstResponder];
     [self setEditing:NO animated:YES];
-    
+
     [[NSNotificationCenter defaultCenter] removeObserver:self name:UIKeyboardWillShowNotification object:nil];
-	[[NSNotificationCenter defaultCenter] removeObserver:self name:UIKeyboardWillHideNotification object:nil];
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:UIKeyboardWillHideNotification object:nil];
+
+    [self.messageInputView.textView removeObserver:self forKeyPath:@"contentSize"];
 }
 
 - (void)didReceiveMemoryWarning
 {
     [super didReceiveMemoryWarning];
-    NSLog(@"*** %@: didReceiveMemoryWarning ***", self.class);
+    NSLog(@"*** %@: didReceiveMemoryWarning ***", [self class]);
 }
 
 - (void)dealloc
 {
-    [_messageInputView.textView removeObserver:self forKeyPath:@"contentSize"];
     _delegate = nil;
     _dataSource = nil;
     _tableView = nil;
@@ -209,7 +198,18 @@
 
 - (void)sendPressed:(UIButton *)sender
 {
-    [self.delegate didSendText:[self.messageInputView.textView.text js_stringByTrimingWhitespace]];
+    //  add a space to accept any auto-correct suggestions
+    NSString *text = self.messageInputView.textView.text;
+    self.messageInputView.textView.text = [text stringByAppendingString:@" "];
+
+    [self.delegate didSendText:[self.messageInputView.textView.text js_stringByTrimingWhitespace]
+                    fromSender:self.sender
+                        onDate:[NSDate date]];
+}
+
+- (void)handleTapGestureRecognizer:(UITapGestureRecognizer *)tap
+{
+    [self.messageInputView.textView resignFirstResponder];
 }
 
 #pragma mark - Table view data source
@@ -227,47 +227,47 @@
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
     JSBubbleMessageType type = [self.delegate messageTypeForRowAtIndexPath:indexPath];
-    
+
     UIImageView *bubbleImageView = [self.delegate bubbleImageViewWithType:type
                                                         forRowAtIndexPath:indexPath];
-    
-    BOOL hasTimestamp = [self shouldHaveTimestampForRowAtIndexPath:indexPath];
-    BOOL hasAvatar = [self shouldHaveAvatarForRowAtIndexPath:indexPath];
-	BOOL hasSubtitle = [self shouldHaveSubtitleForRowAtIndexPath:indexPath];
-    
-    NSString *CellIdentifier = [NSString stringWithFormat:@"MessageCell_%d_%d_%d_%d", type, hasTimestamp, hasAvatar, hasSubtitle];
+
+    id<JSMessageData> message = [self.dataSource messageForRowAtIndexPath:indexPath];
+
+    UIImageView *avatar = [self.dataSource avatarImageViewForRowAtIndexPath:indexPath sender:[message sender]];
+
+    BOOL displayTimestamp = YES;
+    if ([self.delegate respondsToSelector:@selector(shouldDisplayTimestampForRowAtIndexPath:)]) {
+        displayTimestamp = [self.delegate shouldDisplayTimestampForRowAtIndexPath:indexPath];
+    }
+
+    NSString *CellIdentifier = nil;
+    if ([self.delegate respondsToSelector:@selector(customCellIdentifierForRowAtIndexPath:)]) {
+        CellIdentifier = [self.delegate customCellIdentifierForRowAtIndexPath:indexPath];
+    }
+
+    if (!CellIdentifier) {
+        CellIdentifier = [NSString stringWithFormat:@"JSMessageCell_%d_%d_%d_%d", (int)type, displayTimestamp, avatar != nil, [message sender] != nil];
+    }
+
     JSBubbleMessageCell *cell = (JSBubbleMessageCell *)[tableView dequeueReusableCellWithIdentifier:CellIdentifier];
-    
-    if(!cell) {
+
+    if (!cell) {
         cell = [[JSBubbleMessageCell alloc] initWithBubbleType:type
                                                bubbleImageView:bubbleImageView
-                                                  hasTimestamp:hasTimestamp
-                                                     hasAvatar:hasAvatar
-                                                   hasSubtitle:hasSubtitle
+                                                       message:message
+                                             displaysTimestamp:displayTimestamp
+                                                     hasAvatar:avatar != nil
                                                reuseIdentifier:CellIdentifier];
     }
-    
-    if(hasTimestamp) {
-        [cell setTimestamp:[self.dataSource timestampForRowAtIndexPath:indexPath]];
-    }
-	
-    if(hasAvatar) {
-        [cell setAvatarImageView:[self.dataSource avatarImageViewForRowAtIndexPath:indexPath]];
-    }
-    
-	if(hasSubtitle) {
-		[cell setSubtitle:[self.dataSource subtitleForRowAtIndexPath:indexPath]];
-    }
-    
-    [cell setMessage:[self.dataSource textForRowAtIndexPath:indexPath]];
+
+    [cell setMessage:message];
+    [cell setAvatarImageView:avatar];
     [cell setBackgroundColor:tableView.backgroundColor];
-    
-    cell.bubbleView.textView.dataDetectorTypes = UIDataDetectorTypeAll;
-    
-    if([self.delegate respondsToSelector:@selector(configureCell:atIndexPath:)]) {
+
+    if ([self.delegate respondsToSelector:@selector(configureCell:atIndexPath:)]) {
         [self.delegate configureCell:cell atIndexPath:indexPath];
     }
-    
+
     return cell;
 }
 
@@ -275,79 +275,20 @@
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    NSString *text = [self.dataSource textForRowAtIndexPath:indexPath];
-    
-    BOOL hasTimestamp = [self shouldHaveTimestampForRowAtIndexPath:indexPath];
-    BOOL hasAvatar = [self shouldHaveAvatarForRowAtIndexPath:indexPath];
-	BOOL hasSubtitle = [self shouldHaveSubtitleForRowAtIndexPath:indexPath];
-    
-    return [JSBubbleMessageCell neededHeightForBubbleMessageCellWithText:text
-                                                               timestamp:hasTimestamp
-                                                                  avatar:hasAvatar
-                                                                subtitle:hasSubtitle];
+    id<JSMessageData> message = [self.dataSource messageForRowAtIndexPath:indexPath];
+    UIImageView *avatar = [self.dataSource avatarImageViewForRowAtIndexPath:indexPath sender:[message sender]];
+
+    BOOL displayTimestamp = YES;
+    if ([self.delegate respondsToSelector:@selector(shouldDisplayTimestampForRowAtIndexPath:)]) {
+        displayTimestamp = [self.delegate shouldDisplayTimestampForRowAtIndexPath:indexPath];
+    }
+
+    return [JSBubbleMessageCell neededHeightForBubbleMessageCellWithMessage:message
+                                                             displaysAvatar:avatar != nil
+                                                          displaysTimestamp:displayTimestamp];
 }
 
 #pragma mark - Messages view controller
-
-- (BOOL)shouldHaveTimestampForRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    switch ([self.delegate timestampPolicy]) {
-        case JSMessagesViewTimestampPolicyAll:
-            return YES;
-            
-        case JSMessagesViewTimestampPolicyAlternating:
-            return indexPath.row % 2 == 0;
-            
-        case JSMessagesViewTimestampPolicyEveryThree:
-            return indexPath.row % 3 == 0;
-            
-        case JSMessagesViewTimestampPolicyEveryFive:
-            return indexPath.row % 5 == 0;
-            
-        case JSMessagesViewTimestampPolicyCustom:
-            if([self.delegate respondsToSelector:@selector(hasTimestampForRowAtIndexPath:)])
-                return [self.delegate hasTimestampForRowAtIndexPath:indexPath];
-            
-        default:
-            return NO;
-    }
-}
-
-- (BOOL)shouldHaveAvatarForRowAtIndexPath:(NSIndexPath *)indexPath
-{
-	switch ([self.delegate avatarPolicy]) {
-        case JSMessagesViewAvatarPolicyAll:
-            return YES;
-            
-        case JSMessagesViewAvatarPolicyIncomingOnly:
-            return [self.delegate messageTypeForRowAtIndexPath:indexPath] == JSBubbleMessageTypeIncoming;
-			
-		case JSMessagesViewAvatarPolicyOutgoingOnly:
-			return [self.delegate messageTypeForRowAtIndexPath:indexPath] == JSBubbleMessageTypeOutgoing;
-            
-        case JSMessagesViewAvatarPolicyNone:
-        default:
-            return NO;
-    }
-}
-
-- (BOOL)shouldHaveSubtitleForRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    switch ([self.delegate subtitlePolicy]) {
-        case JSMessagesViewSubtitlePolicyAll:
-            return YES;
-        
-        case JSMessagesViewSubtitlePolicyIncomingOnly:
-            return [self.delegate messageTypeForRowAtIndexPath:indexPath] == JSBubbleMessageTypeIncoming;
-            
-        case JSMessagesViewSubtitlePolicyOutgoingOnly:
-            return [self.delegate messageTypeForRowAtIndexPath:indexPath] == JSBubbleMessageTypeOutgoing;
-            
-        case JSMessagesViewSubtitlePolicyNone:
-        default:
-            return NO;
-    }
-}
 
 - (void)finishSend
 {
@@ -365,12 +306,12 @@
 
 - (void)scrollToBottomAnimated:(BOOL)animated
 {
-	if(![self shouldAllowScroll])
+    if (![self shouldAllowScroll])
         return;
-	
+
     NSInteger rows = [self.tableView numberOfRowsInSection:0];
-    
-    if(rows > 0) {
+
+    if (rows > 0) {
         [self.tableView scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:rows - 1 inSection:0]
                               atScrollPosition:UITableViewScrollPositionBottom
                                       animated:animated];
@@ -378,26 +319,26 @@
 }
 
 - (void)scrollToRowAtIndexPath:(NSIndexPath *)indexPath
-			  atScrollPosition:(UITableViewScrollPosition)position
-					  animated:(BOOL)animated
+              atScrollPosition:(UITableViewScrollPosition)position
+                      animated:(BOOL)animated
 {
-	if(![self shouldAllowScroll])
+    if (![self shouldAllowScroll])
         return;
-	
-	[self.tableView scrollToRowAtIndexPath:indexPath
-						  atScrollPosition:position
-								  animated:animated];
+
+    [self.tableView scrollToRowAtIndexPath:indexPath
+                          atScrollPosition:position
+                                  animated:animated];
 }
 
 - (BOOL)shouldAllowScroll
 {
-    if(self.isUserScrolling) {
-        if([self.delegate respondsToSelector:@selector(shouldPreventScrollToBottomWhileUserScrolling)]
-           && [self.delegate shouldPreventScrollToBottomWhileUserScrolling]) {
+    if (self.isUserScrolling) {
+        if ([self.delegate respondsToSelector:@selector(shouldPreventScrollToBottomWhileUserScrolling)]
+                && [self.delegate shouldPreventScrollToBottomWhileUserScrolling]) {
             return NO;
         }
     }
-    
+
     return YES;
 }
 
@@ -405,7 +346,7 @@
 
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView
 {
-	self.isUserScrolling = YES;
+    self.isUserScrolling = YES;
 }
 
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate
@@ -418,10 +359,10 @@
 - (void)textViewDidBeginEditing:(UITextView *)textView
 {
     [textView becomeFirstResponder];
-	
-    if(!self.previousTextViewContentHeight)
-		self.previousTextViewContentHeight = textView.contentSize.height;
-    
+
+    if (!self.previousTextViewContentHeight)
+        self.previousTextViewContentHeight = textView.contentSize.height;
+
     [self scrollToBottomAnimated:YES];
 }
 
@@ -440,63 +381,82 @@
 - (void)layoutAndAnimateMessageInputTextView:(UITextView *)textView
 {
     CGFloat maxHeight = [JSMessageInputView maxHeight];
-    
+
     BOOL isShrinking = textView.contentSize.height < self.previousTextViewContentHeight;
     CGFloat changeInHeight = textView.contentSize.height - self.previousTextViewContentHeight;
-    
-    if(!isShrinking && (self.previousTextViewContentHeight == maxHeight || textView.text.length == 0)) {
+
+    if (!isShrinking && (self.previousTextViewContentHeight == maxHeight || textView.text.length == 0)) {
         changeInHeight = 0;
     }
     else {
         changeInHeight = MIN(changeInHeight, maxHeight - self.previousTextViewContentHeight);
     }
-    
-    if(changeInHeight != 0.0f) {
+
+    if (changeInHeight != 0.0f) {
         [UIView animateWithDuration:0.25f
                          animations:^{
-                             UIEdgeInsets insets = UIEdgeInsetsMake(0.0f,
-                                                                    0.0f,
-                                                                    self.tableView.contentInset.bottom + changeInHeight,
-                                                                    0.0f);
-                             
-                             self.tableView.contentInset = insets;
-                             self.tableView.scrollIndicatorInsets = insets;
+                             [self setTableViewInsetsWithBottomValue:self.tableView.contentInset.bottom + changeInHeight];
+
                              [self scrollToBottomAnimated:NO];
-                             
-                             if(isShrinking) {
+
+                             if (isShrinking) {
                                  // if shrinking the view, animate text view frame BEFORE input view frame
                                  [self.messageInputView adjustTextViewHeightBy:changeInHeight];
                              }
-                             
+
                              CGRect inputViewFrame = self.messageInputView.frame;
                              self.messageInputView.frame = CGRectMake(0.0f,
-                                                                      inputViewFrame.origin.y - changeInHeight,
-                                                                      inputViewFrame.size.width,
-                                                                      inputViewFrame.size.height + changeInHeight);
-                             
-                             if(!isShrinking) {
+                                     inputViewFrame.origin.y - changeInHeight,
+                                     inputViewFrame.size.width,
+                                     inputViewFrame.size.height + changeInHeight);
+
+                             if (!isShrinking) {
                                  // growing the view, animate the text view frame AFTER input view frame
                                  [self.messageInputView adjustTextViewHeightBy:changeInHeight];
                              }
                          }
                          completion:^(BOOL finished) {
                          }];
-        
+
         self.previousTextViewContentHeight = MIN(textView.contentSize.height, maxHeight);
     }
-    
+
     // Once we reached the max height, we have to consider the bottom offset for the text view.
     // To make visible the last line, again we have to set the content offset.
     if (self.previousTextViewContentHeight == maxHeight) {
         double delayInSeconds = 0.01;
         dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delayInSeconds * NSEC_PER_SEC));
         dispatch_after(popTime,
-                       dispatch_get_main_queue(),
-                       ^(void) {
-                           CGPoint bottomOffset = CGPointMake(0.0f, textView.contentSize.height - textView.bounds.size.height);
-                           [textView setContentOffset:bottomOffset animated:YES];
-                       });
+                dispatch_get_main_queue(),
+                ^(void) {
+                    CGPoint bottomOffset = CGPointMake(0.0f, textView.contentSize.height - textView.bounds.size.height);
+                    [textView setContentOffset:bottomOffset animated:YES];
+                });
     }
+}
+
+- (void)setTableViewInsetsWithBottomValue:(CGFloat)bottom
+{
+    UIEdgeInsets insets = [self tableViewInsetsWithBottomValue:bottom];
+    self.tableView.contentInset = insets;
+    self.tableView.scrollIndicatorInsets = insets;
+}
+
+- (UIEdgeInsets)tableViewInsetsWithBottomValue:(CGFloat)bottom
+{
+    UIEdgeInsets insets = UIEdgeInsetsZero;
+
+    if ([self respondsToSelector:@selector(topLayoutGuide)]) {
+        insets.top = self.topLayoutGuide.length;
+    }
+
+    if ([self.delegate respondsToSelector:@selector(customTopHeaderView)]) {
+        insets.top = self.delegate.customTopHeaderView.frame.size.height;
+    }
+
+    insets.bottom = bottom;
+
+    return insets;
 }
 
 #pragma mark - Key-value observing
@@ -506,32 +466,34 @@
                         change:(NSDictionary *)change
                        context:(void *)context
 {
-    if ([object isKindOfClass:[UITextView class]] && [keyPath isEqualToString:@"contentSize"]) {
+    if (object == self.messageInputView.textView && [keyPath isEqualToString:@"contentSize"]) {
         [self layoutAndAnimateMessageInputTextView:object];
     }
 }
 
 #pragma mark - Keyboard notifications
 
-- (void)handleWillShowKeyboardNotification:(NSNotification *)notification {
+- (void)handleWillShowKeyboardNotification:(NSNotification *)notification
+{
     [self keyboardWillShowHide:YES notification:notification];
 }
 
-- (void)handleWillHideKeyboardNotification:(NSNotification *)notification {
+- (void)handleWillHideKeyboardNotification:(NSNotification *)notification
+{
     [self keyboardWillShowHide:NO notification:notification];
 }
 
 - (void)keyboardWillShowHide:(BOOL)isShown notification:(NSNotification *)notification {
     self.isKeyboardVisible = isShown;
-    CGRect keyboardRect = [[notification.userInfo objectForKey:UIKeyboardFrameEndUserInfoKey] CGRectValue];
+    self.keyboardRect = [[notification.userInfo objectForKey:UIKeyboardFrameEndUserInfoKey] CGRectValue];
     UIViewAnimationCurve curve = [[notification.userInfo objectForKey:UIKeyboardAnimationCurveUserInfoKey] integerValue];
     double duration = [[notification.userInfo objectForKey:UIKeyboardAnimationDurationUserInfoKey] doubleValue];
 
     [UIView animateWithDuration:duration
-                          delay:0.0f
+                          delay:0.0
                         options:[self animationOptionsForCurve:curve]
                      animations:^{
-                         CGFloat keyboardY = [self.view convertRect:keyboardRect fromView:nil].origin.y;
+                         CGFloat keyboardY = [self.view convertRect:self.keyboardRect fromView:nil].origin.y;
                          if (!self.isKeyboardVisible) {
                              keyboardY = [UIScreen mainScreen].bounds.size.height;
                          }
@@ -540,26 +502,21 @@
                          CGFloat inputViewFrameY = keyboardY - inputViewFrame.size.height;
 
                          // for ipad modal form presentations
-                         // CGFloat messageViewFrameBottom = self.view.frame.size.height - inputViewFrame.size.height;
-                         // if(inputViewFrameY > messageViewFrameBottom)
-                         //     inputViewFrameY = messageViewFrameBottom;
+//                         CGFloat messageViewFrameBottom = self.view.frame.size.height - inputViewFrame.size.height;
+//                         if (inputViewFrameY > messageViewFrameBottom)
+//                             inputViewFrameY = messageViewFrameBottom;
 
                          self.messageInputView.frame = CGRectMake(inputViewFrame.origin.x,
                                  inputViewFrameY,
                                  inputViewFrame.size.width,
                                  inputViewFrame.size.height);
 
-                         UIEdgeInsets insets = self.originalTableViewContentInset;
 
-                         insets.bottom = self.view.frame.size.height
-                                 - self.messageInputView.frame.origin.y
-                                 - inputViewFrame.size.height;
 
-                         self.tableView.contentInset = insets;
-                         self.tableView.scrollIndicatorInsets = insets;
+                         [self setTableViewInsetsWithBottomValue:self.view.frame.size.height
+                                 - self.messageInputView.frame.origin.y];
                      }
-                     completion:^(BOOL finished) {
-                     }];
+                     completion:nil];
 }
 
 #pragma mark - Dismissive text view delegate
@@ -579,14 +536,6 @@
     self.messageInputView.frame = inputViewFrame;
 }
 
-- (void)keyboardWillSnapBackToPoint:(CGPoint)point
-{
-    CGRect inputViewFrame = self.messageInputView.frame;
-    CGPoint keyboardOrigin = [self.view convertPoint:point fromView:nil];
-    inputViewFrame.origin.y = keyboardOrigin.y - inputViewFrame.size.height;
-    self.messageInputView.frame = inputViewFrame;
-}
-
 #pragma mark - Utilities
 
 - (UIViewAnimationOptions)animationOptionsForCurve:(UIViewAnimationCurve)curve
@@ -594,16 +543,16 @@
     switch (curve) {
         case UIViewAnimationCurveEaseInOut:
             return UIViewAnimationOptionCurveEaseInOut;
-            
+
         case UIViewAnimationCurveEaseIn:
             return UIViewAnimationOptionCurveEaseIn;
-            
+
         case UIViewAnimationCurveEaseOut:
             return UIViewAnimationOptionCurveEaseOut;
-            
+
         case UIViewAnimationCurveLinear:
             return UIViewAnimationOptionCurveLinear;
-            
+
         default:
             return kNilOptions;
     }

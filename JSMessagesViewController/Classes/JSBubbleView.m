@@ -58,15 +58,15 @@
               bubbleImageView:(UIImageView *)bubbleImageView
 {
     self = [super initWithFrame:frame];
-    if(self) {
+    if (self) {
         [self setup];
-        
+
         _type = bubleType;
-        
+
         bubbleImageView.userInteractionEnabled = YES;
         [self addSubview:bubbleImageView];
         _bubbleImageView = bubbleImageView;
-        
+
         UITextView *textView = [[UITextView alloc] init];
         textView.font = [UIFont systemFontOfSize:16.0f];
         textView.textColor = [UIColor blackColor];
@@ -79,17 +79,16 @@
         textView.contentInset = UIEdgeInsetsZero;
         textView.scrollIndicatorInsets = UIEdgeInsetsZero;
         textView.contentOffset = CGPointZero;
-        textView.dataDetectorTypes = UIDataDetectorTypeNone;
         [self addSubview:textView];
         [self bringSubviewToFront:textView];
         _textView = textView;
-        
-        if([_textView respondsToSelector:@selector(textContainerInset)]) {
+
+        if ([_textView respondsToSelector:@selector(textContainerInset)]) {
             _textView.textContainerInset = UIEdgeInsetsMake(10.0f, 4.0f, 0.0f, 4.0f);
         }
-        
+
         [self addTextViewObservers];
-        
+
 //        NOTE: TODO: textView frame & text inset
 //        --------------------
 //        future implementation for textView frame
@@ -117,12 +116,12 @@
                 forKeyPath:@"text"
                    options:NSKeyValueObservingOptionNew
                    context:nil];
-    
+
     [_textView addObserver:self
                 forKeyPath:@"font"
                    options:NSKeyValueObservingOptionNew
                    context:nil];
-    
+
     [_textView addObserver:self
                 forKeyPath:@"textColor"
                    options:NSKeyValueObservingOptionNew
@@ -142,9 +141,9 @@
                        context:(void *)context
 {
     if (object == self.textView) {
-        if([keyPath isEqualToString:@"text"]
-           || [keyPath isEqualToString:@"font"]
-           || [keyPath isEqualToString:@"textColor"]) {
+        if ([keyPath isEqualToString:@"text"]
+                || [keyPath isEqualToString:@"font"]
+                || [keyPath isEqualToString:@"textColor"]) {
             [self setNeedsLayout];
         }
     }
@@ -165,11 +164,11 @@
     if (_font == nil) {
         _font = [[[self class] appearance] font];
     }
-    
+
     if (_font != nil) {
         return _font;
     }
-    
+
     return [UIFont systemFontOfSize:16.0f];
 }
 
@@ -178,11 +177,11 @@
 - (CGRect)bubbleFrame
 {
     CGSize bubbleSize = [JSBubbleView neededSizeForText:self.textView.text];
-    
-    return CGRectMake((self.type == JSBubbleMessageTypeOutgoing ? self.frame.size.width - bubbleSize.width : 0.0f),
-                      kMarginTop,
-                      bubbleSize.width,
-                      bubbleSize.height + kMarginTop);
+
+    return CGRectIntegral(CGRectMake((self.type == JSBubbleMessageTypeOutgoing ? self.frame.size.width - bubbleSize.width : 0.0f),
+            kMarginTop,
+            bubbleSize.width,
+            bubbleSize.height + kMarginBottom));
 }
 
 #pragma mark - Layout
@@ -190,21 +189,21 @@
 - (void)layoutSubviews
 {
     [super layoutSubviews];
-    
+
     self.bubbleImageView.frame = [self bubbleFrame];
-    
+
     CGFloat textX = self.bubbleImageView.frame.origin.x;
-    
-    if(self.type == JSBubbleMessageTypeIncoming) {
+
+    if (self.type == JSBubbleMessageTypeIncoming) {
         textX += (self.bubbleImageView.image.capInsets.left / 2.0f);
     }
-    
+
     CGRect textFrame = CGRectMake(textX,
-                                  self.bubbleImageView.frame.origin.y,
-                                  self.bubbleImageView.frame.size.width - (self.bubbleImageView.image.capInsets.right / 2.0f),
-                                  self.bubbleImageView.frame.size.height - kMarginTop);
-    
-    self.textView.frame = textFrame;
+            self.bubbleImageView.frame.origin.y,
+            self.bubbleImageView.frame.size.width - (self.bubbleImageView.image.capInsets.right / 2.0f),
+            self.bubbleImageView.frame.size.height - kMarginTop);
+
+    self.textView.frame = CGRectIntegral(textFrame);
 }
 
 #pragma mark - Bubble view
@@ -213,19 +212,33 @@
 {
     CGFloat maxWidth = [UIScreen mainScreen].applicationFrame.size.width * 0.70f;
     CGFloat maxHeight = MAX([JSMessageTextView numberOfLinesForMessage:txt],
-                         [txt js_numberOfLines]) * [JSMessageInputView textViewLineHeight];
+    [txt js_numberOfLines]) * [JSMessageInputView textViewLineHeight];
     maxHeight += kJSAvatarImageSize;
-    
-    return [txt sizeWithFont:[[JSBubbleView appearance] font]
-           constrainedToSize:CGSizeMake(maxWidth, maxHeight)];
+
+    CGSize stringSize;
+
+    if (NSFoundationVersionNumber > NSFoundationVersionNumber_iOS_6_0) {
+        CGRect stringRect = [txt boundingRectWithSize:CGSizeMake(maxWidth, maxHeight)
+                                              options:NSStringDrawingUsesLineFragmentOrigin
+                                           attributes:@{ NSFontAttributeName : [[JSBubbleView appearance] font] }
+                                              context:nil];
+
+        stringSize = CGRectIntegral(stringRect).size;
+    }
+    else {
+        stringSize = [txt sizeWithFont:[[JSBubbleView appearance] font]
+                     constrainedToSize:CGSizeMake(maxWidth, maxHeight)];
+    }
+
+    return CGSizeMake(roundf(stringSize.width), roundf(stringSize.height));
 }
 
 + (CGSize)neededSizeForText:(NSString *)text
 {
     CGSize textSize = [JSBubbleView textSizeForText:text];
-    
-	return CGSizeMake(textSize.width + kBubblePaddingRight,
-                      textSize.height + kPaddingTop + kPaddingBottom);
+
+    return CGSizeMake(textSize.width + kBubblePaddingRight,
+            textSize.height + kPaddingTop + kPaddingBottom);
 }
 
 + (CGFloat)neededHeightForText:(NSString *)text

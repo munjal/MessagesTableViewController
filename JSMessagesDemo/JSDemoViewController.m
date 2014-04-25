@@ -13,6 +13,7 @@
 //
 
 #import "JSDemoViewController.h"
+#import "JSMessage.h"
 
 #define kSubtitleJobs @"Jobs"
 #define kSubtitleWoz @"Steve Wozniak"
@@ -31,30 +32,24 @@
     [[JSBubbleView appearance] setFont:[UIFont systemFontOfSize:16.0f]];
     
     self.title = @"Messages";
-    
     self.messageInputView.textView.placeHolder = @"New Message";
+    self.sender = @"Jobs";
     
     [self setBackgroundColor:[UIColor whiteColor]];
     
     self.messages = [[NSMutableArray alloc] initWithObjects:
-                     @"JSMessagesViewController is simple and easy to use.",
-                     @"It's highly customizable.",
-                     @"It even has data detectors. You can call me tonight. My cell number is 452-123-4567. \nMy website is www.hexedbits.com.",
-                     @"Group chat is possible. Sound effects and images included. Animations are smooth. Messages can be of arbitrary size!",
+                     [[JSMessage alloc] initWithText:@"JSMessagesViewController is simple and easy to use." sender:kSubtitleJobs date:[NSDate distantPast]],
+                     [[JSMessage alloc] initWithText:@"It's highly customizable." sender:kSubtitleWoz date:[NSDate distantPast]],
+                     [[JSMessage alloc] initWithText:@"It even has data detectors. You can call me tonight. My cell number is 452-123-4567. \nMy website is www.hexedbits.com." sender:kSubtitleJobs date:[NSDate distantPast]],
+                     [[JSMessage alloc] initWithText:@"Group chat. Sound effects and images included. Animations are smooth. Messages can be of arbitrary size!" sender:kSubtitleCook date:[NSDate distantPast]],
+                     [[JSMessage alloc] initWithText:@"Group chat. Sound effects and images included. Animations are smooth. Messages can be of arbitrary size!" sender:kSubtitleJobs date:[NSDate date]],
+                     [[JSMessage alloc] initWithText:@"Group chat. Sound effects and images included. Animations are smooth. Messages can be of arbitrary size!" sender:kSubtitleWoz date:[NSDate date]],
                      nil];
     
-    self.timestamps = [[NSMutableArray alloc] initWithObjects:
-                       [NSDate distantPast],
-                       [NSDate distantPast],
-                       [NSDate distantPast],
-                       [NSDate date],
-                       nil];
     
-    self.subtitles = [[NSMutableArray alloc] initWithObjects:
-                      kSubtitleJobs,
-                      kSubtitleWoz,
-                      kSubtitleJobs,
-                      kSubtitleCook, nil];
+    for (NSUInteger i = 0; i < 3; i++) {
+        [self.messages addObjectsFromArray:self.messages];
+    }
     
     self.avatars = [[NSDictionary alloc] initWithObjectsAndKeys:
                     [JSAvatarImageFactory avatarImageNamed:@"demo-avatar-jobs" croppedToCircle:YES], kSubtitleJobs,
@@ -62,12 +57,20 @@
                     [JSAvatarImageFactory avatarImageNamed:@"demo-avatar-cook" croppedToCircle:YES], kSubtitleCook,
                     nil];
     
-//    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFastForward
-//                                                                                           target:self
-//                                                                                           action:@selector(buttonPressed:)];
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFastForward
+                                                                                           target:self
+                                                                                           action:@selector(buttonPressed:)];
 }
 
-- (void)buttonPressed:(UIButton *)sender
+- (void)viewWillAppear:(BOOL)animated
+{
+    [super viewWillAppear:animated];
+    [self scrollToBottomAnimated:NO];
+}
+
+#pragma mark - Actions
+
+- (void)buttonPressed:(UIBarButtonItem *)sender
 {
     // Testing pushing/popping messages view
     JSDemoViewController *vc = [[JSDemoViewController alloc] initWithNibName:nil bundle:nil];
@@ -83,22 +86,18 @@
 
 #pragma mark - Messages view delegate: REQUIRED
 
-- (void)didSendText:(NSString *)text
+- (void)didSendText:(NSString *)text fromSender:(NSString *)sender onDate:(NSDate *)date
 {
-    [self.messages addObject:text];
-    
-    [self.timestamps addObject:[NSDate date]];
-    
-    if((self.messages.count - 1) % 2) {
+    if ((self.messages.count - 1) % 2) {
         [JSMessageSoundEffect playMessageSentSound];
-        
-        [self.subtitles addObject:arc4random_uniform(100) % 2 ? kSubtitleCook : kSubtitleWoz];
     }
     else {
+        // for demo purposes only, mimicing received messages
         [JSMessageSoundEffect playMessageReceivedSound];
-        
-        [self.subtitles addObject:kSubtitleJobs];
+        sender = arc4random_uniform(10) % 2 ? kSubtitleCook : kSubtitleWoz;
     }
+    
+    [self.messages addObject:[[JSMessage alloc] initWithText:text sender:sender date:date]];
     
     [self finishSend];
     [self scrollToBottomAnimated:YES];
@@ -112,28 +111,13 @@
 - (UIImageView *)bubbleImageViewWithType:(JSBubbleMessageType)type
                        forRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if(indexPath.row % 2) {
+    if (indexPath.row % 2) {
         return [JSBubbleImageViewFactory bubbleImageViewForType:type
                                                           color:[UIColor js_bubbleLightGrayColor]];
     }
     
     return [JSBubbleImageViewFactory bubbleImageViewForType:type
                                                       color:[UIColor js_bubbleBlueColor]];
-}
-
-- (JSMessagesViewTimestampPolicy)timestampPolicy
-{
-    return JSMessagesViewTimestampPolicyEveryThree;
-}
-
-- (JSMessagesViewAvatarPolicy)avatarPolicy
-{
-    return JSMessagesViewAvatarPolicyAll;
-}
-
-- (JSMessagesViewSubtitlePolicy)subtitlePolicy
-{
-    return JSMessagesViewSubtitlePolicyAll;
 }
 
 - (JSMessageInputViewStyle)inputViewStyle
@@ -143,15 +127,23 @@
 
 #pragma mark - Messages view delegate: OPTIONAL
 
+- (BOOL)shouldDisplayTimestampForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    if (indexPath.row % 3 == 0) {
+        return YES;
+    }
+    return NO;
+}
+
 //
 //  *** Implement to customize cell further
 //
 - (void)configureCell:(JSBubbleMessageCell *)cell atIndexPath:(NSIndexPath *)indexPath
 {
-    if([cell messageType] == JSBubbleMessageTypeOutgoing) {
+    if ([cell messageType] == JSBubbleMessageTypeOutgoing) {
         cell.bubbleView.textView.textColor = [UIColor whiteColor];
     
-        if([cell.bubbleView.textView respondsToSelector:@selector(linkTextAttributes)]) {
+        if ([cell.bubbleView.textView respondsToSelector:@selector(linkTextAttributes)]) {
             NSMutableDictionary *attrs = [cell.bubbleView.textView.linkTextAttributes mutableCopy];
             [attrs setValue:[UIColor blueColor] forKey:UITextAttributeTextColor];
             
@@ -159,20 +151,21 @@
         }
     }
     
-    if(cell.timestampLabel) {
+    if (cell.timestampLabel) {
         cell.timestampLabel.textColor = [UIColor lightGrayColor];
         cell.timestampLabel.shadowOffset = CGSizeZero;
     }
     
-    if(cell.subtitleLabel) {
+    if (cell.subtitleLabel) {
         cell.subtitleLabel.textColor = [UIColor lightGrayColor];
     }
+    
+    #if TARGET_IPHONE_SIMULATOR
+        cell.bubbleView.textView.dataDetectorTypes = UIDataDetectorTypeNone;
+    #else
+        cell.bubbleView.textView.dataDetectorTypes = UIDataDetectorTypeAll;
+    #endif
 }
-
-//  *** Required if using `JSMessagesViewTimestampPolicyCustom`
-//
-//  - (BOOL)hasTimestampForRowAtIndexPath:(NSIndexPath *)indexPath
-//
 
 //  *** Implement to use a custom send button
 //
@@ -224,26 +217,25 @@
 
 #pragma mark - Messages view data source: REQUIRED
 
-- (NSString *)textForRowAtIndexPath:(NSIndexPath *)indexPath
+- (NSString *)textForRowAtIndexPath:(NSIndexPath *)indexPath{
+    return [self.messages objectAtIndex:indexPath.row];
+}
+- (BOOL)allowsPanToDismissKeyboard
+{
+    return YES;
+}
+
+#pragma mark - Messages view data source: REQUIRED
+
+- (JSMessage *)messageForRowAtIndexPath:(NSIndexPath *)indexPath
 {
     return [self.messages objectAtIndex:indexPath.row];
 }
 
-- (NSDate *)timestampForRowAtIndexPath:(NSIndexPath *)indexPath
+- (UIImageView *)avatarImageViewForRowAtIndexPath:(NSIndexPath *)indexPath sender:(NSString *)sender
 {
-    return [self.timestamps objectAtIndex:indexPath.row];
-}
-
-- (UIImageView *)avatarImageViewForRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    NSString *subtitle = [self.subtitles objectAtIndex:indexPath.row];
-    UIImage *image = [self.avatars objectForKey:subtitle];
+    UIImage *image = [self.avatars objectForKey:sender];
     return [[UIImageView alloc] initWithImage:image];
-}
-
-- (NSString *)subtitleForRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    return [self.subtitles objectAtIndex:indexPath.row];
 }
 
 @end

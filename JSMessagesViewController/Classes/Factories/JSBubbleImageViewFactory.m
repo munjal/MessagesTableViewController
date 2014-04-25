@@ -60,12 +60,14 @@ static NSDictionary *bubbleImageDictionary;
     UIImage *normalBubble = [bubble js_imageMaskWithColor:color];
     UIImage *highlightedBubble = [bubble js_imageMaskWithColor:[color js_darkenColorWithValue:0.12f]];
     
-    if(type == JSBubbleMessageTypeIncoming) {
+    if (type == JSBubbleMessageTypeIncoming) {
         normalBubble = [normalBubble js_imageFlippedHorizontal];
         highlightedBubble = [highlightedBubble js_imageFlippedHorizontal];
     }
     
-    UIEdgeInsets capInsets = UIEdgeInsetsMake(15.0f, 20.0f, 15.0f, 20.0f);
+    // make image stretchable from center point
+    CGPoint center = CGPointMake(bubble.size.width / 2.0f, bubble.size.height / 2.0f);
+    UIEdgeInsets capInsets = UIEdgeInsetsMake(center.y, center.x, center.y, center.x);
     
     return [[UIImageView alloc] initWithImage:[normalBubble js_stretchableImageWithCapInsets:capInsets]
                              highlightedImage:[highlightedBubble js_stretchableImageWithCapInsets:capInsets]];
@@ -86,7 +88,7 @@ static NSDictionary *bubbleImageDictionary;
     UIImage *image = [UIImage imageNamed:[bubbleImageDictionary objectForKey:@(style)]];
     UIImage *highlightedImage = [JSBubbleImageViewFactory classicHighlightedBubbleImageForStyle:style];
     
-    if(!isOutgoing) {
+    if (!isOutgoing) {
         image = [image js_imageFlippedHorizontal];
         highlightedImage = [highlightedImage js_imageFlippedHorizontal];
     }
