@@ -117,6 +117,8 @@
  */
 - (NSString *)customCellIdentifierForRowAtIndexPath:(NSIndexPath *)indexPath;
 
+- (UIView *)customTopHeaderView;
+
 @end
 
 
@@ -177,6 +179,11 @@
  */
 @property (copy, nonatomic) NSString *sender;
 
+@property(nonatomic) BOOL isKeyboardVisible;
+
+@property(nonatomic) CGRect keyboardRect;
+
+
 #pragma mark - Messages view controller
 
 /**
@@ -218,5 +225,8 @@
 - (void)scrollToRowAtIndexPath:(NSIndexPath *)indexPath
               atScrollPosition:(UITableViewScrollPosition)position
                       animated:(BOOL)animated;
+
+
+- (void)keyboardDidScrollToPoint:(CGPoint)point;
 
 @end
